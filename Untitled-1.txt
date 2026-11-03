@@ -1,0 +1,142 @@
+import { useState } from "react";
+
+// Starter data. Later this comes from your database.
+const START = [
+  { id: 1, name: "Rajan", owed: 500, phone: "9999900001" },
+  { id: 2, name: "Suresh", owed: 1200, phone: "9999900002" },
+  { id: 3, name: "Anitha", owed: 350, phone: "9999900003" },
+];
+
+// Keeps only digits and one decimal point, so no up/down arrows anywhere.
+const numbersOnly = (v) => v.replace(/[^0-9.]/g, "").replace(/(\..*)\./g, "$1");
+
+// Draws a simple bill picture (name + amount owed) and returns it as an image file.
+function makeBillImage(name, owed) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 600;
+  canvas.height = 340;
+  const g = canvas.getContext("2d");
+
+  g.fillStyle = "#ffffff";
+  g.fillRect(0, 0, 600, 340);
+  g.strokeStyle = "#333333";
+  g.lineWidth = 4;
+  g.strokeRect(10, 10, 580, 320);
+
+  g.fillStyle = "#333333";
+  g.font = "bold 28px sans-serif";
+  g.fillText("Pending Bill", 40, 70);
+
+  g.font = "32px sans-serif";
+  g.fillText(name, 40, 150);
+
+  g.fillStyle = "#c62828";
+  g.font = "bold 52px sans-serif";
+  g.fillText("Owes ₹" + owed, 40, 240);
+
+  g.fillStyle = "#666666";
+  g.font = "20px sans-serif";
+  g.fillText(new Date().toLocaleDateString("en-IN"), 40, 300);
+
+  return new Promise((resolve) =>
+    canvas.toBlob((blob) => resolve(new File([blob], `${name}-bill.png`, { type: "image/png" })))
+  );
+}
+
+export default function PendingBills() {
+  const [rows, setRows] = useState(START);
+  const [paid, setPaid] = useState({}); // typed cash per row, by id
+
+  // Subtract the typed cash from what the customer owes.
+  const applyCash = (id) => {
+    const amount = Number(paid[id]) || 0;
+    if (amount <= 0) return;
+    setRows((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, owed: Math.max(r.owed - amount, 0) } : r))
+    );
+    setPaid((p) => ({ ...p, [id]: "" }));
+  };
+
+  // Opens the phone's share sheet (WhatsApp, Messages, etc.) with the bill image.
+  const shareBill = async (row) => {
+    const file = await makeBillImage(row.name, row.owed);
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({
+          files: [file],
+          title: "Pending bill",
+          text: `${row.name}, your pending amount is ₹${row.owed}`,
+        });
+      } catch (e) {
+        // user closed the share sheet
+      }
+    } else {
+      // Fallback for desktop browsers: download the image
+      const url = URL.createObjectURL(file);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = file.name;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+  };
+
+  const pending = rows.filter((r) => r.owed > 0);
+
+  return (
+    <div style={{ padding: 20, maxWidth: 600, margin: "0 auto", fontFamily: "sans-serif" }}>
+      <h2>Pending Bills ({pending.length})</h2>
+
+      {rows.map((r) => (
+        <div
+          key={r.id}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "12px 0",
+            borderBottom: "1px solid #eee",
+            gap: 10,
+          }}
+        >
+          {/* Customer details */}
+          <div style={{ flex: 1 }}>
+            <strong style={{ fontSize: 18 }}>{r.name}</strong>
+            <div style={{ color: "#666", fontSize: 14 }}>{r.phone}</div>
+          </div>
+
+          {/* Amount owed */}
+          <div style={{ fontWeight: "bold", color: "#c62828", fontSize: 18 }}>
+            ₹{r.owed}
+          </div>
+
+          {/* Cash input box */}
+          <input
+            type="text"
+            inputMode="decimal"
+            placeholder="Cash"
+            value={paid[r.id] || ""}
+            onChange={(e) => setPaid((p) => ({ ...p, [r.id]: numbersOnly(e.target.value) }))}
+            onKeyDown={(e) => e.key === "Enter" && applyCash(r.id)}
+            style={{ width: 80, padding: 8, fontSize: 16, textAlign: "right" }}
+          />
+
+          {/* Action buttons */}
+          <button
+            onClick={() => applyCash(r.id)}
+            style={{ padding: "8px 12px", cursor: "pointer" }}
+          >
+            Pay
+          </button>
+
+          <button
+            onClick={() => shareBill(r)}
+            style={{ padding: "8px 12px", cursor: "pointer" }}
+          >
+            Share
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
